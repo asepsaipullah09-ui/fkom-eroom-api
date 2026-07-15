@@ -79,7 +79,7 @@ class BookingController extends Controller
         return response()->json(['success' => true, 'data' => $bookings], 200);
     }
 
-    public function approveBooking(Request $request, $id)
+        public function approveBooking(Request $request, $id)
     {
         $user = $request->user();
         if ($user->role !== 'admin' && $user->role !== 'dosen') {
@@ -91,17 +91,32 @@ class BookingController extends Controller
             return response()->json(['success' => false, 'message' => 'Booking tidak ditemukan'], 404);
         }
 
-        $booking->update(['status' => 'approved']);
+        // LOGIKA BERURUTAN (STRICT)
+        if ($user->role === 'dosen') {
+            // Dosen hanya bisa approve jika status masih pending_dosen
+            if ($booking->status !== 'pending_dosen') {
+                return response()->json(['success' => false, 'message' => 'Booking tidak valid untuk disetujui Dosen'], 400);
+            }
+            $booking->update(['status' => 'pending_admin']);
+        } 
+        elseif ($user->role === 'admin') {
+            // Admin hanya bisa approve jika Dosen sudah approve (status pending_admin)
+            if ($booking->status !== 'pending_admin') {
+                return response()->json(['success' => false, 'message' => 'Booking harus disetujui Dosen terlebih dahulu'], 400);
+            }
+            $booking->update(['status' => 'approved']);
+        }
 
+        // Buat Notifikasi
         Notification::create([
             'user_id' => $booking->user_id,
-            'judul' => 'Booking Disetujui',
-            'pesan' => "Booking {$booking->kode_booking} untuk {$booking->room->nama_ruangan} telah disetujui.",
+            'judul' => 'Update Booking',
+            'pesan' => "Booking {$booking->kode_booking} telah disetujui oleh {$user->role}. Status sekarang: {$booking->status}",
             'booking_id' => $booking->id,
             'is_read' => false,
         ]);
 
-        return response()->json(['success' => true, 'message' => 'Booking disetujui', 'data' => $booking->fresh()], 200);
+        return response()->json(['success' => true, 'message' => 'Booking berhasil disetujui', 'data' => $booking->fresh()], 200);
     }
 
     public function rejectBooking(Request $request, $id)
